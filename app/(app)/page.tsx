@@ -10,13 +10,13 @@ export default async function Home() {
   const u = await pageUser();
   const t = makeT(u.ui_lang);
   const day = today(u.timezone);
-  const m = minutes(u);
+  const m = await minutes(u);
   const doneToday = u.last_day === day;
   // The current week, Monday first, with the days that have a finished session.
   const dow = (new Date(day).getUTCDay() + 6) % 7;
   const week = Array.from({ length: 7 }, (_, i) => new Date(Date.parse(day) + (i - dow) * 864e5).toISOString().slice(0, 10));
-  const active = new Set(all("SELECT DISTINCT day FROM sessions WHERE user_id=? AND status='done' AND day>=?", u.id, week[0]).map((r) => r.day));
-  const last = get("SELECT id, day FROM reports WHERE user_id=? ORDER BY id DESC LIMIT 1", u.id);
+  const active = new Set((await all("SELECT DISTINCT day FROM sessions WHERE user_id=? AND status='done' AND day>=?", u.id, week[0])).map((r) => r.day));
+  const last = await get("SELECT id, day FROM reports WHERE user_id=? ORDER BY id DESC LIMIT 1", u.id);
   const at = LEVELS.indexOf(u.level!);
 
   return (
@@ -46,7 +46,7 @@ export default async function Home() {
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Link href="/plan#bosses" className="card"><p className="text-3xl">👾</p><p className="font-black">{t("Error bosses")} · {bosses(u.id).length}</p><p className="text-sm text-muted">{t("Use the right form to beat them.")}</p></Link>
+        <Link href="/plan#bosses" className="card"><p className="text-3xl">👾</p><p className="font-black">{t("Error bosses")} · {(await bosses(u.id)).length}</p><p className="text-sm text-muted">{t("Use the right form to beat them.")}</p></Link>
         <Link href={last ? `/reports/${last.id}` : "/reports"} className="card"><p className="text-3xl">📄</p><p className="font-black">{t("Last report")}</p><p className="text-sm text-muted">{last?.day ?? "—"}</p></Link>
       </div>
     </>

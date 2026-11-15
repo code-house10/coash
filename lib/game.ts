@@ -8,29 +8,30 @@ export const today = (tz: string, d = new Date()) => {
 };
 const addDays = (day: string, n: number) => new Date(Date.parse(day) + n * 864e5).toISOString().slice(0, 10);
 
-export function minutes(u: User) {
+export async function minutes(u: User) {
   const day = today(u.timezone);
   const expired = !!u.access_until && u.access_until < day;
   const limit = expired ? 0 : (PLANS[u.plan] ?? PLANS.trial).minutes;
-  const used = get<{ s: number }>("SELECT COALESCE(SUM(seconds),0) s FROM sessions WHERE user_id=? AND day=? AND kind='daily'", u.id, day)!.s / 60;
+  const used = (await get<{ s: number }>("SELECT COALESCE(SUM(seconds),0) s FROM sessions WHERE user_id=? AND day=? AND kind='daily'", u.id, day))!.s / 60;
   return { limit, used: Math.round(used), left: Math.max(0, Math.floor(limit - used)), expired };
 }
 
-export const plan = (userId: number) => {
-  const r = get("SELECT * FROM plans WHERE user_id=? ORDER BY version DESC LIMIT 1", userId);
+export const plan = async (userId: number) => {
+  const r = await get("SELECT * FROM plans WHERE user_id=? ORDER BY version DESC LIMIT 1", userId);
   return r ? { version: r.version as number, created: r.created as string, ...(J(r.data, {}) as PlanData) } : null;
 };
 export type PlanData = { goals: string[]; focus: { title: string; why: string; wrong: string; right: string }[]; themes: Record<string, string[]> };
 
-export const bosses = (userId: number) => all("SELECT * FROM mistakes WHERE user_id=? AND hp>0 ORDER BY count DESC", userId);
+export const bosses = async (userId: number) => await all("SELECT * FROM mistakes WHERE user_id=? AND hp>0 ORDER BY count DESC", userId);
 
 const about = (u: User) =>
   `Name: ${u.name || "the learner"}. Level: ${u.level ?? "unknown"}. First language: ${u.profile.firstLang || "Arabic"}. Job: ${u.profile.job || "-"}. ` +
   `Uses English: ${u.profile.where || "-"}. Interests: ${u.profile.interests || "-"}. Goal: ${u.profile.why || "-"}.`;
 
 /** System prompt for the live voice coach. */
-export function coachPrompt(u: User, s: { mode?: string; theme?: string; minutes?: number; kind?: string }) {
-  const p = plan(u.id);
+export async function coachPrompt(u: User, s: { mode?: string; theme?: string; minutes?: number; kind?: string }) {
+  const p = await plan(u.id);
+  const bs = await bosses(u.id);
   const mode = MODES.find((m) => m.id === s.mode);
   const base = `You are a warm, patient spoken-English partner on a voice call. Speak only English. ${about(u)}
 Rules: keep every turn short (1-3 sentences) so the learner speaks at least 60% of the time. Match their level: simple words and slower pace for A levels, natural speed for B2+. Ask one question at a time. If they switch language, gently bring them back to English. Do not lecture on grammar; recast mistakes naturally, and only correct explicitly during the mistake hunt. Messages in [Director: ...] brackets are silent stage directions from the app: obey them, never read them aloud or mention them.`;
@@ -41,7 +42,7 @@ Rules: keep every turn short (1-3 sentences) so the learner speaks at least 60% 
   return `${base}
 Today's session: ${s.minutes} minutes, mode "${mode?.name}": ${mode?.how} Theme: ${s.theme}
 ${p ? `Focus points to give practice on: ${p.focus.map((f) => f.title).join("; ")}.` : ""}
-${bosses(u.id).length ? `Recurring mistakes to set traps for (create chances to use the right form): ${bosses(u.id).map((b) => `"${b.wrong}" -> "${b.fix}"`).join("; ")}.` : ""}`;
+${bs.length ? `Recurring mistakes to set traps for (create chances to use the right form): ${bs.map((b) => `"${b.wrong}" -> "${b.fix}"`).join("; ")}.` : ""}`;
 }
 
 export async function writePlan(u: User, evidence: string) {
@@ -50,13 +51,13 @@ export async function writePlan(u: User, evidence: string) {
 Evidence of their English: ${evidence.slice(0, 6000)}
 Return: {"goals": [5 concrete can-do aims for this stage], "focus": [5 items {"title","why" (one sentence, personal),"wrong" (typical wrong sentence),"right" (corrected)}], "themes": {${MODES.map((m) => `"${m.id}": [3 short ${m.name} prompts tailored to their job and interests]`).join(", ")}}}`,
   );
-  const v = (get<{ v: number }>("SELECT COALESCE(MAX(version),0) v FROM plans WHERE user_id=?", u.id)!.v) + 1;
-  run("INSERT INTO plans (user_id, version, data) VALUES (?,?,?)", u.id, v, JSON.stringify(data));
+  const v = ((await get<{ v: number }>("SELECT COALESCE(MAX(version),0) v FROM plans WHERE user_id=?", u.id))!.v) + 1;
+  await run("INSERT INTO plans (user_id, version, data) VALUES (?,?,?)", u.id, v, JSON.stringify(data));
 }
 
-export function pickSession(u: User) {
-  const p = plan(u.id);
-  const n = get<{ n: number }>("SELECT COUNT(*) n FROM sessions WHERE user_id=? AND kind='daily'", u.id)!.n;
+export async function pickSession(u: User) {
+  const p = await plan(u.id);
+  const n = (await get<{ n: number }>("SELECT COUNT(*) n FROM sessions WHERE user_id=? AND kind='daily'", u.id))!.n;
   const mode = MODES[n % MODES.length]; // rotate so every mode comes round
   const themes = p?.themes?.[mode.id] ?? [];
   const theme = themes[Math.floor(n / MODES.length) % (themes.length || 1)] ?? "Your day so far and your plans for the week.";
@@ -68,7 +69,7 @@ const transcript = (turns: Turn[]) => turns.map((t) => `${t.role === "user" ? "L
 /** Grades a finished session, stores the report, and updates XP, streak, bosses and badges. */
 export async function finishSession(u: User, s: any, turns: Turn[], seconds: number, speaking: number, provider: string) {
   const day = today(u.timezone);
-  const bs = bosses(u.id);
+  const bs = await bosses(u.id);
   const lang = u.report_lang === "ar" ? "Arabic (keep quoted English sentences in English)" : "English";
   const r = await json(
     `Grade this spoken-English practice session. ${about(u)} Write all prose in ${lang}, addressed to the learner as "you".
@@ -89,21 +90,21 @@ Return JSON: {"summary": "2 sentences", "scores": {"fluency","grammar","vocabula
   if (hw) xpLines.push([`Tried harder vocabulary ×${hw}`, hw * 5]);
 
   const newBadges: string[] = [];
-  const badge = (id: string) => { if (run("INSERT OR IGNORE INTO badges VALUES (?,?,?)", u.id, id, day).changes) newBadges.push(id); };
+  const badge = async (id: string) => { if ((await run("INSERT OR IGNORE INTO badges VALUES (?,?,?)", u.id, id, day)).changes) newBadges.push(id); };
 
   for (const id of (r.bossHits ?? []) as number[]) {
     const b = bs.find((x) => x.id === id);
     if (!b) continue;
-    run("UPDATE mistakes SET hp = hp - 1 WHERE id=?", id);
+    await run("UPDATE mistakes SET hp = hp - 1 WHERE id=?", id);
     xpLines.push([`Hit a boss: ${b.fix}`, 10]);
-    if (b.hp <= 1) badge("boss");
+    if (b.hp <= 1) await badge("boss");
   }
   for (const m of (r.mistakes ?? []) as any[]) {
-    const old = get("SELECT * FROM mistakes WHERE user_id=? AND key=?", u.id, m.key);
+    const old = await get("SELECT * FROM mistakes WHERE user_id=? AND key=?", u.id, m.key);
     m.isNew = !old;
-    if (!old) run("INSERT INTO mistakes (user_id,key,wrong,fix) VALUES (?,?,?,?)", u.id, m.key, m.wrong, m.fix);
+    if (!old) await run("INSERT INTO mistakes (user_id,key,wrong,fix) VALUES (?,?,?,?)", u.id, m.key, m.wrong, m.fix);
     // A mistake seen in a second session becomes a boss with 3 health.
-    else run("UPDATE mistakes SET count=count+1, hp=CASE WHEN hp>0 THEN hp ELSE 3 END, wrong=?, fix=? WHERE id=?", m.wrong, m.fix, old.id);
+    else await run("UPDATE mistakes SET count=count+1, hp=CASE WHEN hp>0 THEN hp ELSE 3 END, wrong=?, fix=? WHERE id=?", m.wrong, m.fix, old.id);
   }
 
   // Streak: same day keeps it, yesterday extends it, a one-day gap spends a freeze, else reset.
@@ -112,24 +113,24 @@ Return JSON: {"summary": "2 sentences", "scores": {"fluency","grammar","vocabula
     if (u.last_day === addDays(day, -1)) streak++;
     else if (u.last_day === addDays(day, -2) && freezes > 0) { streak++; freezes--; }
     else streak = 1;
-    if (streak % 7 === 0) { freezes = Math.min(2, freezes + 1); badge("week"); }
+    if (streak % 7 === 0) { freezes = Math.min(2, freezes + 1); await badge("week"); }
   }
   const xp = xpLines.reduce((a, [, n]) => a + n, 0);
-  run("UPDATE users SET xp=xp+?, streak=?, freezes=?, last_day=? WHERE id=?", xp, streak, freezes, day, u.id);
-  run("UPDATE sessions SET status='done', turns=?, seconds=?, speaking=?, provider=? WHERE id=?", JSON.stringify(turns), seconds, speaking, provider, s.id);
+  await run("UPDATE users SET xp=xp+?, streak=?, freezes=?, last_day=? WHERE id=?", xp, streak, freezes, day, u.id);
+  await run("UPDATE sessions SET status='done', turns=?, seconds=?, speaking=?, provider=? WHERE id=?", JSON.stringify(turns), seconds, speaking, provider, s.id);
 
-  const done = get<{ n: number }>("SELECT COUNT(*) n FROM sessions WHERE user_id=? AND kind='daily' AND status='done'", u.id)!.n;
-  if (done === 1) badge("first");
-  if (done === 10) badge("ten");
+  const done = (await get<{ n: number }>("SELECT COUNT(*) n FROM sessions WHERE user_id=? AND kind='daily' AND status='done'", u.id))!.n;
+  if (done === 1) await badge("first");
+  if (done === 10) await badge("ten");
 
   const mode = MODES.find((m) => m.id === s.mode);
   const data = { ...r, xp, xpLines, streak, minutes: mins, planned: s.minutes, speakingSeconds: Math.round(speaking), spoke: Math.round((speaking / Math.max(1, seconds)) * 100), mode: mode && { emoji: mode.emoji, name: mode.name, nameAr: mode.nameAr }, theme: s.theme, provider, badges: newBadges };
-  const reportId = Number(run("INSERT INTO reports (user_id, session_id, day, data) VALUES (?,?,?,?)", u.id, s.id, day, JSON.stringify(data)).lastInsertRowid);
+  const reportId = Number((await run("INSERT INTO reports (user_id, session_id, day, data) VALUES (?,?,?,?)", u.id, s.id, day, JSON.stringify(data))).lastInsertRowid);
 
   // Weekly review every 7th session: a new plan version from the week's reports.
   const weeklyDue = done % 7 === 0;
   if (weeklyDue) {
-    const week = all("SELECT data FROM reports WHERE user_id=? ORDER BY id DESC LIMIT 7", u.id).map((x) => { const d = J(x.data, {} as any); return { summary: d.summary, mistakes: d.mistakes, weak: d.weak }; });
+    const week = (await all("SELECT data FROM reports WHERE user_id=? ORDER BY id DESC LIMIT 7", u.id)).map((x) => { const d = J(x.data, {} as any); return { summary: d.summary, mistakes: d.mistakes, weak: d.weak }; });
     await writePlan(u, `Last 7 session reports: ${JSON.stringify(week)}`).catch((e) => console.error("weekly plan", e));
   }
   return { reportId, weeklyDue };

@@ -23,6 +23,6 @@ export const POST = api(async (u, req) => {
   if ("reminder" in b && /^\d\d:\d\d$/.test(b.reminder)) set.reminder = b.reminder;
   if ("timezone" in b) { try { new Intl.DateTimeFormat("en", { timeZone: b.timezone }); set.timezone = str(b.timezone, 60); } catch {} }
   const keys = Object.keys(set);
-  if (keys.length) run(`UPDATE users SET ${keys.map((k) => `${k}=?`).join(", ")} WHERE id=?`, ...Object.values(set), u.id);
+  if (keys.length) await run(`UPDATE users SET ${keys.map((k) => `${k}=?`).join(", ")} WHERE id=?`, ...Object.values(set), u.id);
   return { ok: true };
 });

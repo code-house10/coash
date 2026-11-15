@@ -8,9 +8,9 @@ import { LEVELS, MODES, BADGES } from "@/lib/shared";
 export default async function Plan() {
   const u = await pageUser();
   const t = makeT(u.ui_lang);
-  const p = plan(u.id);
-  const bs = bosses(u.id);
-  const badges = all("SELECT * FROM badges WHERE user_id=?", u.id);
+  const p = await plan(u.id);
+  const bs = await bosses(u.id);
+  const badges = await all("SELECT * FROM badges WHERE user_id=?", u.id);
   const top = u.level === "C2";
   return (
     <>

@@ -9,7 +9,7 @@ import { PrintButton } from "@/components/PrintButton";
 export default async function Report({ params }: { params: Promise<{ id: string }> }) {
   const u = await pageUser();
   const t = makeT(u.ui_lang);
-  const row = get("SELECT * FROM reports WHERE id=? AND user_id=?", Number((await params).id), u.id);
+  const row = await get("SELECT * FROM reports WHERE id=? AND user_id=?", Number((await params).id), u.id);
   if (!row) notFound();
   const d = J(row.data, {} as any);
   const list = (title: string, items?: string[]) => !!items?.length && (

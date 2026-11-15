@@ -24,7 +24,7 @@ export function verify(pw: string, stored: string) {
 
 export async function signIn(userId: number) {
   const token = randomBytes(32).toString("hex");
-  run("INSERT INTO tokens (token, user_id) VALUES (?, ?)", token, userId);
+  await run("INSERT INTO tokens (token, user_id) VALUES (?, ?)", token, userId);
   (await cookies()).set(COOKIE, token, {
     httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 90,
   });
@@ -32,14 +32,14 @@ export async function signIn(userId: number) {
 export async function signOut() {
   const c = await cookies();
   const token = c.get(COOKIE)?.value;
-  if (token) run("DELETE FROM tokens WHERE token = ?", token);
+  if (token) await run("DELETE FROM tokens WHERE token = ?", token);
   c.delete(COOKIE);
 }
 
 export async function currentUser(): Promise<User | null> {
   const token = (await cookies()).get(COOKIE)?.value;
   if (!token) return null;
-  const r = get("SELECT u.* FROM tokens t JOIN users u ON u.id = t.user_id WHERE t.token = ?", token);
+  const r = await get("SELECT u.* FROM tokens t JOIN users u ON u.id = t.user_id WHERE t.token = ?", token);
   if (!r) return null;
   return { ...r, profile: J(r.profile, {}), theme: J(r.theme, { mode: "auto", brand: "#7c4dff", accent: "#ec4899" }) };
 }

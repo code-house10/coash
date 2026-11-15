@@ -5,7 +5,7 @@ import { coachPrompt } from "@/lib/game";
 
 export const POST = api(async (u, req) => {
   const { sessionId, handle } = await req.json();
-  const s = get("SELECT * FROM sessions WHERE id=? AND user_id=? AND status='open'", Number(sessionId), u.id);
+  const s = await get("SELECT * FROM sessions WHERE id=? AND user_id=? AND status='open'", Number(sessionId), u.id);
   if (!s) throw new Bad("Session not found.");
-  return liveToken(coachPrompt(u, s), u.voice, handle || undefined);
+  return liveToken(await coachPrompt(u, s), u.voice, handle || undefined);
 });

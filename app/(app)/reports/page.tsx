@@ -6,7 +6,7 @@ import { makeT } from "@/lib/t";
 export default async function Reports() {
   const u = await pageUser();
   const t = makeT(u.ui_lang);
-  const rows = all("SELECT id, day, data FROM reports WHERE user_id=? ORDER BY id DESC", u.id).map((r) => ({ ...r, d: J(r.data, {} as any) }));
+  const rows = (await all("SELECT id, day, data FROM reports WHERE user_id=? ORDER BY id DESC", u.id)).map((r) => ({ ...r, d: J(r.data, {} as any) }));
   const avg = (s: Record<string, number>) => Math.round(Object.values(s ?? {}).reduce((a, b) => a + (Number(b) || 0), 0) / Math.max(1, Object.keys(s ?? {}).length));
   return (
     <>

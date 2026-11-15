@@ -8,7 +8,7 @@ import { Settings } from "@/components/Settings";
 export default async function SettingsPage() {
   const u = await pageUser();
   const t = makeT(u.ui_lang);
-  const m = minutes(u);
+  const m = await minutes(u);
   return (
     <>
       <h1 className="text-2xl font-black">{t("Settings")}</h1>
