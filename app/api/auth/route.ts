@@ -11,6 +11,12 @@ function limited(ip: string) {
 const bad = (error: string, status = 400) => Response.json({ error }, { status });
 
 export async function POST(req: Request) {
+  // Surface setup problems (missing database config, wrong token) instead of a bare 500.
+  try { return await handle(req); }
+  catch (e) { console.error("/api/auth", e); return bad(e instanceof Error ? e.message : String(e), 500); }
+}
+
+async function handle(req: Request) {
   const b = await req.json().catch(() => ({}));
   const hasAccount = !!await get("SELECT 1 FROM users LIMIT 1");
   if (b.action === "status") return Response.json({ hasAccount });

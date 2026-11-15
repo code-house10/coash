@@ -34,7 +34,11 @@ const SCHEMA = `
 // Opened on first query (not at import), and the schema is applied once per server instance.
 const g = globalThis as unknown as { __db?: Promise<Client> };
 const db = () => (g.__db ??= (async () => {
-  if (url.startsWith("file:")) mkdirSync("data", { recursive: true });
+  if (url.startsWith("file:")) {
+    // Serverless hosts have no writable disk, so the local file cannot work there. Say so plainly.
+    if (process.env.VERCEL) throw new Error("Database is not configured: set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN in the Vercel project, then redeploy.");
+    mkdirSync("data", { recursive: true });
+  }
   const c = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN });
   await c.executeMultiple(SCHEMA);
   return c;
