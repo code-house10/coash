@@ -47,7 +47,8 @@ export async function currentUser(): Promise<User | null> {
 /** For pages: redirects to /login, and to /placement until the user has a level. */
 export async function pageUser(needLevel = true) {
   const u = await currentUser();
-  if (!u) redirect("/login");
+  // DEV_AUTO_LOGIN=1 (never in production) skips the sign-in page for local testing.
+  if (!u) redirect(process.env.NODE_ENV !== "production" && process.env.DEV_AUTO_LOGIN === "1" ? "/api/dev-login" : "/login");
   if (needLevel && !u.level) redirect("/placement");
   return u;
 }
