@@ -1,0 +1,10 @@
+{
+  "name": "Fasih",
+  "short_name": "Fasih",
+  "description": "Daily spoken English practice",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f5fb",
+  "theme_color": "#7c4dff",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
