@@ -20,6 +20,27 @@ function parseCsv(s: string) {
   return rows;
 }
 
+// Everyday domains a live scene is set in: [English name, Arabic name, what it covers].
+const DOMAINS = [
+  ["Work & office", "الشغل والمكتب", "work, office, meetings, coworkers, boss"],
+  ["Restaurant & café", "المطعم والكافيه", "restaurant, cafe, ordering food"],
+  ["Shopping", "التسوق", "shopping, returns, prices, supermarket"],
+  ["Travel & airport", "السفر والمطار", "airport, travel, hotel check-in, tourism"],
+  ["Doctor & pharmacy", "الدكتور والصيدلية", "doctor, pharmacy, feeling sick"],
+  ["Bank & money", "البنك والفلوس", "bank, transfers, bills, money problems"],
+  ["Getting around", "المواصلات", "taxi, ride apps, bus, traffic, directions"],
+  ["Home & family", "البيت والأسرة", "family, home, chores, parents, kids"],
+  ["Friends & going out", "الأصحاب والخروجات", "friends, plans, going out, catching up"],
+  ["Phone & customer service", "التليفون وخدمة العملاء", "phone calls, customer service, complaints"],
+  ["Job interview", "مقابلة شغل", "job interview, career, CV"],
+  ["Study", "الدراسة", "school, university, exams, courses"],
+  ["Neighbours & housing", "الجيران والسكن", "neighbours, renting, landlord, repairs"],
+  ["Sport & gym", "الرياضة والجيم", "sports, gym, football match"],
+  ["Problems & emergencies", "مشاكل وطوارئ", "emergencies, accidents, lost items, police"],
+  ["Technology", "التكنولوجيا", "phones, computers, internet, apps"],
+  ["Feelings & relationships", "المشاعر والعلاقات", "feelings, relationships, apologies, arguments"],
+] as const;
+
 const clip = (v: unknown, n: number) => String(v ?? "").trim().slice(0, n);
 
 export const POST = api(async (u, req) => {
@@ -85,7 +106,16 @@ Return JSON {
       if (!cards.length) throw new Bad("Upload your cards first.");
       const mins = 10, total = mins * 60_000;
       const sessionId = (await run("INSERT INTO sessions (user_id, day, kind, minutes, theme) VALUES (?,?,'situations',?,?)", u.id, today(u.timezone), mins, JSON.stringify(cards))).lastInsertRowid;
-      return { sessionId, speechRate: (u.level ?? "B1").startsWith("A") ? 0.85 : 1, timeline: { warmupMs: 0, wrapAtMs: total - 25_000, hardStopMs: total + 15_000 } };
+      // One scene = one everyday domain + three cards, played as a single continuing conversation.
+      const domains = [...DOMAINS].sort(() => Math.random() - 0.5);
+      const scenes = Array.from({ length: Math.ceil(cards.length / 3) }, (_, i) => {
+        const targets = cards.slice(i * 3, i * 3 + 3), [en, ar, about] = domains[i % domains.length];
+        return {
+          title: u.ui_lang === "ar" ? ar : en, targets: targets.map((c) => ({ front: c.front, back: c.back })),
+          cue: `[Director: start a new scene now. Domain: ${about}. Target chunks: ${targets.map((c, j) => `${j + 1}) ${c.front} (Arabic: ${c.back})`).join("  ")}]`,
+        };
+      });
+      return { sessionId, scenes, speechRate: (u.level ?? "B1").startsWith("A") ? 0.85 : 1, timeline: { warmupMs: 0, wrapAtMs: total - 25_000, hardStopMs: total + 15_000 } };
     }
     case "live-finish": {
       const s = await get("SELECT * FROM sessions WHERE id=? AND user_id=? AND kind='situations' AND status='open'", Number(b.sessionId), u.id);
@@ -103,20 +133,21 @@ ${CHUNK}
 
 ${transcript(turns).slice(0, 20000)}
 
-Return one item for each situation that appears in the transcript and that the learner answered, in order. Never invent a situation or a reply that is not in the transcript; if there are none, return {"items":[]}. JSON {"items":[{
+The drill is a continuing conversation: in each scene the coach plays a person, and after each learner reply may say "You could say: ..." before carrying on in character.
+Return one item for each learner reply worth reviewing, in order: every reply the coach corrected with "You could say", and every reply that used (or clearly should have used) one of the target chunks. Skip greetings and one-word answers. Never invent a reply that is not in the transcript; if there are none, return {"items":[]}. JSON {"items":[{
 "id": card id from the list,
 "scene": "the situation in one or two sentences, in ${lang}",
 "line": "the question the coach asked in character",
-"said": "the learner's FIRST answer to that question, before the coach's 'Perfect' or 'You could say', copied exactly as transcribed, Arabic words included. Never use the repetition they say after 'Your turn'.",
+"said": "that learner reply, copied exactly as transcribed, Arabic words included",
 "ok": true if that reply was fully English, correct and natural. Using the chunk with their own details is correct,
 "fixed": "that reply in natural, correct English, each Arabic part replaced by what a native speaker would say there, their own details kept",
-"native": "the coach's own 'A native speaker would say' sentence if there is one; otherwise the chunk used with this situation's details. Never the card's example sentence",
+"native": "the coach's own 'You could say' sentence for that reply if there is one; otherwise the most natural way to say it here using the chunk with this situation's details. Never the card's example sentence",
 "tip": "one short tip in ${lang} on the main difference"}]}`);
       // Models sometimes invent replies: keep an item only if its "said" really occurs in the learner's speech.
       const norm = (v: unknown) => String(v ?? "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
       const spoken = norm(turns.filter((x) => x.role === "user").map((x) => x.text).join(" "));
       const saved = [];
-      for (const x of (r.items ?? []).slice(0, cards.length)) {
+      for (const x of (r.items ?? []).slice(0, 40)) {
         const card = cards.find((c) => c.id === Number(x?.id));
         if (!card || !norm(x.said) || !spoken.includes(norm(x.said))) continue;
         const row = { scene: clip(x.scene, 600), line: clip(x.line, 600), said: clip(x.said, 500), fixed: clip(x.fixed, 600) || clip(x.said, 500), native: clip(x.native, 600) || card.front, tip: clip(x.tip, 400), ok: x.ok ? 1 : 0 };

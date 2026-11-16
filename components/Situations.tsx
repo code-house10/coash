@@ -4,7 +4,7 @@ import { useT, post } from "@/lib/i18n";
 import { openMic, wav } from "@/lib/voice";
 import { Call, type CallStart, type CallResult } from "@/components/Call";
 
-const LIVE_CUE = "[Director: the learner just joined. Say hello in three words and start the first situation right away.]";
+const LIVE_CUE = "[Director: the learner just joined. Say hello in three words, then go straight into the scene below.]";
 
 type Item = { cardId: number; scene: string; line: string };
 type Saved = { id: number; scene: string; line: string; said: string; fixed: string; native: string; tip: string; ok: number; front: string | null };
@@ -121,7 +121,7 @@ export function Situations() {
   const [live, setLive] = useState<CallStart | null>(null);
   async function goLive() {
     const r = await call({ action: "live" });
-    if (r) { stopRec.current(); speechSynthesis.cancel(); setLive({ ...r, title: t("Situations"), subtitle: t("Reply out loud. Stuck on a word? Say it in Arabic."), firstCue: LIVE_CUE }); }
+    if (r) { stopRec.current(); speechSynthesis.cancel(); setLive({ ...r, title: t("Situations"), subtitle: t("Reply out loud. Stuck on a word? Say it in Arabic."), firstCue: `${LIVE_CUE} ${r.scenes[0].cue}` }); }
   }
   const [saving, setSaving] = useState(false);
   const [unsaved, setUnsaved] = useState<CallResult | null>(null); // a finished call whose replies could not be saved yet

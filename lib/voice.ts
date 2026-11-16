@@ -51,6 +51,10 @@ export class VoiceSession {
   turns: Turn[] = [];
   provider: "gemini" | "backup" = "gemini";
   speakingMs = 0; tutorMs = 0; failovers = 0; speechRate = 1;
+  /** Playback speed of the coach's live voice (1 = as generated). Below 1 really slows the audio down.
+   * ponytail: plain resampling, so the voice also gets a little deeper (about 2 semitones at 0.88, 4 at 0.8);
+   * swap in a pitch-preserving time-stretch (WSOLA) if that ever bothers. */
+  playbackRate = 1;
   /** Where the token comes from; placement and stage tests reuse the same endpoint. */
   private sessionId = 0;
   private startedAt = 0; private stopped = false;
@@ -129,10 +133,11 @@ export class VoiceSession {
     const buf = out.createBuffer(1, pcm.length, 24000);
     buf.getChannelData(0).set(Float32Array.from(pcm, (s) => s / 32768));
     const src = out.createBufferSource();
-    src.buffer = buf; src.connect(out.destination);
+    src.buffer = buf; src.playbackRate.value = this.playbackRate; src.connect(out.destination);
     this.playAt = Math.max(this.playAt, out.currentTime + 0.03);
     src.start(this.playAt);
-    this.playAt += buf.duration; this.tutorMs += buf.duration * 1000;
+    const secs = buf.duration / this.playbackRate;
+    this.playAt += secs; this.tutorMs += secs * 1000;
     this.sources.add(src);
     src.onended = () => { this.sources.delete(src); if (!this.sources.size && !this.stopped) this.ev.onState(this.provider, "listening"); };
     this.ev.onState("gemini", "speaking");
