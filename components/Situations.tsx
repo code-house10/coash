@@ -129,7 +129,7 @@ export function Situations() {
         <button className="chip" data-on={tab === "practice"} onClick={() => setTab("practice")}>{t("Practice")}</button>
         <button className="chip" data-on={tab === "saved"} onClick={() => setTab("saved")}>{t("My saved replies")} · {saved.length}</button>
       </div>
-      {note && <p className="text-sm text-muted">{note}</p>}
+      {note && <p role="status" className="rounded-xl border border-accent p-2 text-sm font-bold text-accent">{note}</p>}
 
       {tab === "practice" && cards === 0 && (
         <div className="card flex flex-col gap-3"><p>{t("Upload your Duo Cards export and every card becomes a real-life situation to answer.")}</p>{uploader}</div>

@@ -10,7 +10,8 @@ function key() {
   return k;
 }
 // No SDK retries and a hard timeout: a busy model fails fast and gen() moves to the next one.
-const ai = (timeout = 25_000) => new GoogleGenAI({ apiKey: key(), httpOptions: { apiVersion: "v1beta", timeout, retryOptions: { attempts: 1 } } });
+// Gemini rejects a deadline under 10 s outright ("Minimum allowed deadline is 10s"), hence the floor.
+const ai = (timeout = 25_000) => new GoogleGenAI({ apiKey: key(), httpOptions: { apiVersion: "v1beta", timeout: Math.max(timeout, 10_000), retryOptions: { attempts: 1 } } });
 const TEXT_MODELS = [...new Set([TEXT_MODEL, "gemini-3.6-flash", "gemini-3.5-flash", "gemini-flash-lite-latest"])];
 
 const down = new Map<string, number>();
