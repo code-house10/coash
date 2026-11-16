@@ -76,7 +76,7 @@ export function Situations() {
   async function upload(file?: File) {
     if (!file) return;
     const r = await call({ action: "import", csv: await file.text() });
-    if (r) { setCards(r.cards); setNote(t("{n} new cards added.", { n: r.added })); }
+    if (r) { setCards(r.cards); setNote(r.added ? t("{n} new cards added.", { n: r.added }) : t("Nothing new: all {n} cards in this file are already in your deck.", { n: r.inFile })); }
   }
   async function next() {
     setResult(null); setSaid("");

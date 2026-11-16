@@ -85,6 +85,7 @@ export const AR: Record<string, string> = {
   "Answer the way you would in real life. Stuck on a word? Write it in Arabic and keep going.": "رد كما تفعل في الواقع. لا تعرف كلمة؟ اكتبها بالعربي وأكمل.",
   "New situation": "موقف جديد", "Next situation": "الموقف التالي", "Skip": "تخطَّ", "Check my reply": "راجع ردي", "Your reply: English, or mix in Arabic": "ردك: بالإنجليزية، أو اخلط معها عربي",
   "Live conversation": "محادثة حية", "Type my replies": "أكتب ردودي", "Reply out loud. Stuck on a word? Say it in Arabic.": "رد بصوتك. لا تعرف كلمة؟ قلها بالعربي.",
+  "Nothing new: all {n} cards in this file are already in your deck.": "لا جديد: كل الـ {n} كارت في هذا الملف موجودة عندك بالفعل.",
   "Saving your replies…": "نحفظ ردودك…", "Try saving my replies again": "حاول حفظ ردودي مرة أخرى", "{n} replies saved for review.": "حُفظ {n} رد للمراجعة.", "Session not found.": "الجلسة غير موجودة.",
   "Reply by voice": "رد بالصوت", "You said": "قلت", "Your reply, fixed": "ردك بعد التصحيح", "A native speaker would say": "المتحدث الأصلي يقول",
   "Nothing saved yet. Every reply you check is kept here.": "لا شيء محفوظ بعد. كل رد تراجعه يُحفظ هنا.", "Say your answer, then tap to check.": "قل إجابتك ثم اضغط للتحقق.",

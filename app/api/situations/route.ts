@@ -42,7 +42,7 @@ export const POST = api(async (u, req) => {
           ...part.flatMap((r) => [u.id, clip(r[0], 300), clip(r[1], 300), clip(r[2], 300)]));
       }
       const cards = await count();
-      return { cards, added: cards - before };
+      return { cards, added: cards - before, inFile: rows.length };
     }
 
     case "next": {
