@@ -30,6 +30,7 @@ export const AR: Record<string, string> = {
   "Warm-up": "إحماء", "Main activity": "النشاط الرئيسي", "Mistake hunt": "صيد الأخطاء", "Wrap-up": "الختام",
   "Connecting…": "جارٍ الاتصال…", "Listening to you": "أستمع إليك", "Coach is talking": "المدرب يتكلم", "Thinking…": "يفكر…",
   "The main voice service is busy, so the backup voice is in use.": "خدمة الصوت الأساسية مشغولة، فنستخدم الصوت الاحتياطي.",
+  "Coach speed": "سرعة المدرب", "Very slow": "بطيء جداً", "Slow": "بطيء", "Normal": "عادي", "Translate the sentence": "ترجم الجملة", "Close": "إغلاق", "Nothing to translate.": "لا يوجد ما يُترجم.",
   "Let me speak": "دعني أتكلم", "End session": "إنهاء الجلسة",
   "The microphone is blocked. Allow microphone access for this site, then try again.": "الميكروفون محظور. اسمح لهذا الموقع باستخدامه ثم حاول مجدداً.",
   "Nice work. Writing your report…": "عمل رائع. نكتب تقريرك…", "This takes about ten seconds.": "يستغرق نحو عشر ثوانٍ.",
