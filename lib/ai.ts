@@ -1,4 +1,4 @@
-import { GoogleGenAI, Modality } from "@google/genai";
+import { EndSensitivity, GoogleGenAI, Modality } from "@google/genai";
 import type { Turn } from "./shared";
 
 export const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL || "gemini-flash-latest";
@@ -114,6 +114,10 @@ export async function liveToken(system: string, voice: string, handle?: string) 
     responseModalities: [Modality.AUDIO],
     systemInstruction: system,
     speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
+    // Learners pause mid-sentence to think. Gemini Live's default (high end sensitivity) takes a short pause as the
+    // end of the turn and the coach cuts in, so: low sensitivity, and 1.2 s of silence before the turn is over.
+    // The cost is that much extra delay before each reply; lower silenceDurationMs if the coach feels sluggish.
+    realtimeInputConfig: { automaticActivityDetection: { endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_LOW, silenceDurationMs: 1200 } },
     inputAudioTranscription: {},
     outputAudioTranscription: {},
     sessionResumption: handle ? { handle } : {},
