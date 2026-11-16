@@ -51,7 +51,7 @@ export const POST = api(async (u, req) => {
       const r = await json<{ items?: { id: number; scene: string; line: string }[] }>(`An English learner (level ${u.level}) is memorising these phrases:
 ${cards.map((c) => `${c.id}: "${c.front}" (Arabic: ${c.back}${c.hint ? `; example: ${c.hint}` : ""})`).join("\n")}
 For each phrase, invent one real everyday situation (home, work, friends, shops, travel, phone calls; vary them) in which the learner's most natural reply would use that phrase or pattern.
-Return JSON {"items":[{"id": phrase id, "scene": "one or two sentences in ${lang}: where the learner is, who is talking to them, and what the learner wants to get across. Never quote the English phrase.", "line": "what the other person says to the learner, in natural spoken English, one or two sentences"}]}`);
+Return JSON {"items":[{"id": phrase id, "scene": "one or two sentences in ${lang}: where the learner is, who is talking to them, and what the learner wants to get across. Never quote the English phrase.", "line": "what the other person says to the learner, in natural spoken English, one or two sentences"}]}`, undefined, 10_000);
       const items = (r.items ?? []).filter((x) => x?.scene && x?.line && cards.some((c) => c.id === Number(x.id))).map((x) => ({ cardId: Number(x.id), scene: String(x.scene), line: String(x.line) }));
       if (!items.length) throw new Error("The AI service is busy right now. Please try again in a minute.");
       return { items };
@@ -69,7 +69,7 @@ Return JSON {
 "ok": true only if the reply was fully English, correct, and natural in this situation (it does not have to use the target phrase),
 "fixed": "the learner's own reply in natural, correct English: every Arabic part replaced by what a native speaker would say at that point in this context, grammar fixed, their meaning and word choices kept wherever they already work",
 "native": "what a native speaker would most naturally say in this situation, using the target phrase",
-"tip": "one short tip in ${lang} on the main difference between the learner's reply and the native one"}`);
+"tip": "one short tip in ${lang} on the main difference between the learner's reply and the native one"}`, undefined, 8_000);
       const fixed = clip(r.fixed, 600) || said, native = clip(r.native, 600) || card.front, tip = clip(r.tip, 400), ok = r.ok ? 1 : 0;
       const id = (await run("INSERT INTO replies (user_id, card_id, scene, line, said, fixed, native, tip, ok) VALUES (?,?,?,?,?,?,?,?,?)", u.id, card.id, scene, line, said, fixed, native, tip, ok)).lastInsertRowid;
       return { id, scene, line, said, fixed, native, tip, ok, front: card.front };

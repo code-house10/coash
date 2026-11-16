@@ -60,7 +60,15 @@ export function Situations() {
     catch (e) { setNote(t(e instanceof Error ? e.message : String(e))); return null; }
     finally { setBusy(false); }
   };
-  useEffect(() => { void post("/api/situations", { action: "list" }).then((r) => { setCards(r.cards); setSaved(r.saved); }).catch((e) => setNote(String(e.message ?? e))); }, []);
+  // The next batch is fetched in the background (on page load, and while the last situation of a batch is
+  // being answered), so "next situation" does not wait for the AI.
+  const more = useRef<Promise<Item[]> | null>(null);
+  const preload = () => {
+    if (more.current) return;
+    const p = (more.current = post("/api/situations", { action: "next" }).then((r) => r.items as Item[]));
+    p.catch(() => { if (more.current === p) more.current = null; });
+  };
+  useEffect(() => { void post("/api/situations", { action: "list" }).then((r) => { setCards(r.cards); setSaved(r.saved); if (r.cards) preload(); }).catch((e) => setNote(String(e.message ?? e))); }, []);
 
   async function upload(file?: File) {
     if (!file) return;
@@ -69,9 +77,12 @@ export function Situations() {
   }
   async function next() {
     setResult(null); setSaid("");
-    if (queue.length > 1) return setQueue(queue.slice(1));
-    const r = await call({ action: "next" });
-    setQueue(r?.items ?? []);
+    if (queue.length > 1) { if (queue.length === 2) preload(); return setQueue(queue.slice(1)); }
+    setBusy(true); setNote("");
+    preload();
+    try { const items = await more.current!; more.current = null; setQueue(items); }
+    catch (e) { setQueue([]); setNote(t(e instanceof Error ? e.message : String(e))); }
+    setBusy(false);
   }
   async function check() {
     const r = await call({ action: "check", ...item, said });

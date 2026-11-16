@@ -10,29 +10,35 @@ function key() {
   return k;
 }
 // No SDK retries and a hard timeout: a busy model fails fast and gen() moves to the next one.
-const ai = () => new GoogleGenAI({ apiKey: key(), httpOptions: { apiVersion: "v1beta", timeout: 25_000, retryOptions: { attempts: 1 } } });
+const ai = (timeout = 25_000) => new GoogleGenAI({ apiKey: key(), httpOptions: { apiVersion: "v1beta", timeout, retryOptions: { attempts: 1 } } });
 const TEXT_MODELS = [...new Set([TEXT_MODEL, "gemini-3.6-flash", "gemini-3.5-flash", "gemini-flash-lite-latest"])];
 
 const down = new Map<string, number>();
 type Gen = Omit<Parameters<GoogleGenAI["models"]["generateContent"]>[0], "model">;
 /** generateContent with model fallback, because free-tier models are often "experiencing high demand" (503). */
-async function gen(req: Gen): Promise<string> {
+async function gen(req: Gen, timeout?: number): Promise<string> {
   let last: unknown;
   // A model that just failed is skipped for 5 minutes, so one busy model does not slow every request.
-  const up = TEXT_MODELS.filter((m) => (down.get(m) ?? 0) < Date.now());
-  for (const model of up.length ? up : TEXT_MODELS) {
-    try { return (await ai().models.generateContent({ ...req, model })).text ?? ""; }
-    catch (e) { last = e; down.set(model, Date.now() + 5 * 60_000); console.warn(`gemini ${model} failed:`, String((e as Error)?.message ?? e).slice(0, 160)); }
+  // One that is out of quota (429) stays out for an hour: asking again only wastes the user's time.
+  // Skipped models go to the back of the line instead of out of it: they are the last resort when the healthy ones fail too.
+  const now = Date.now(), order = [...TEXT_MODELS].sort((a, b) => Math.max(down.get(a) ?? 0, now) - Math.max(down.get(b) ?? 0, now));
+  for (const model of order) {
+    try { return (await ai(timeout).models.generateContent({ ...req, model })).text ?? ""; }
+    catch (e) {
+      const m = String((e as Error)?.message ?? e);
+      last = e; down.set(model, Date.now() + (m.includes('"code":429') ? 60 : 5) * 60_000); console.warn(`gemini ${model} failed:`, m.slice(0, 160));
+    }
   }
   throw new Error("The AI service is busy right now. Please try again in a minute.", { cause: last });
 }
 
 /** Ask the text model for a JSON object. Groq first when configured (larger free quota, fast); Gemini on any Groq failure. */
-export async function json<T = any>(prompt: string, system?: string): Promise<T> {
+/** `timeout` is per attempt: short prompts the user is waiting on should pass a low one so a hung model is abandoned quickly. */
+export async function json<T = any>(prompt: string, system?: string, timeout = 25_000): Promise<T> {
   if (process.env.GROQ_API_KEY) {
     try {
       const r = await groq("chat/completions", {
-        method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(25_000),
+        method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(timeout),
         body: JSON.stringify({
           model: process.env.GROQ_CHAT_MODEL || "llama-3.3-70b-versatile", temperature: 0.4, response_format: { type: "json_object" },
           messages: [...(system ? [{ role: "system", content: system }] : []), { role: "user", content: prompt }],
@@ -41,7 +47,7 @@ export async function json<T = any>(prompt: string, system?: string): Promise<T>
       return JSON.parse(r.choices[0].message.content);
     } catch (e) { console.warn("groq json failed, using gemini:", String((e as Error)?.message ?? e).slice(0, 160)); }
   }
-  const text = await gen({ contents: prompt, config: { systemInstruction: system, responseMimeType: "application/json", temperature: 0.4 } });
+  const text = await gen({ contents: prompt, config: { systemInstruction: system, responseMimeType: "application/json", temperature: 0.4 } }, timeout);
   return JSON.parse(text || "{}");
 }
 
