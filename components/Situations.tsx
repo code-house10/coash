@@ -2,6 +2,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useT, post } from "@/lib/i18n";
 import { openMic, wav } from "@/lib/voice";
+import { Call, type CallStart, type CallResult } from "@/components/Call";
+
+const LIVE_CUE = "[Director: the learner just joined. Say hello in three words and start the first situation right away.]";
 
 type Item = { cardId: number; scene: string; line: string };
 type Saved = { id: number; scene: string; line: string; said: string; fixed: string; native: string; tip: string; ok: number; front: string | null };
@@ -114,6 +117,23 @@ export function Situations() {
       };
     } catch { setNote(t("The microphone is blocked. Allow microphone access for this site, then try again.")); }
   }
+  // Live mode: the coach voices each situation and corrects out loud; the replies are saved when the call ends.
+  const [live, setLive] = useState<CallStart | null>(null);
+  async function goLive() {
+    const r = await call({ action: "live" });
+    if (r) { stopRec.current(); speechSynthesis.cancel(); setLive({ ...r, title: t("Situations"), subtitle: t("Reply out loud. Stuck on a word? Say it in Arabic."), firstCue: LIVE_CUE }); }
+  }
+  const [saving, setSaving] = useState(false);
+  const [unsaved, setUnsaved] = useState<CallResult | null>(null); // a finished call whose replies could not be saved yet
+  async function liveDone(res: CallResult) {
+    setLive(null); setUnsaved(null); setSaving(true);
+    const r = await call({ action: "live-finish", sessionId: res.sessionId, turns: res.turns, seconds: res.actualSeconds });
+    setSaving(false);
+    if (!r) return setUnsaved(res);
+    setSaved((s) => [...[...r.saved].reverse(), ...s]);
+    setNote(t("{n} replies saved for review.", { n: r.saved.length }));
+    if (r.saved.length) setTab("saved");
+  }
   async function remove(id: number) { if (await call({ action: "delete", id })) setSaved((s) => s.filter((x) => x.id !== id)); }
 
   const uploader = (
@@ -121,6 +141,8 @@ export function Situations() {
       <input type="file" accept=".csv,text/csv" className="hidden" disabled={busy} onChange={(e) => { void upload(e.target.files?.[0]); e.target.value = ""; }} />
     </label>
   );
+
+  if (live) return <Call start={live} onDone={liveDone} onError={(m) => { setLive(null); setNote(m); }} />;
 
   return (
     <>
@@ -131,13 +153,17 @@ export function Situations() {
       </div>
       {note && <p role="status" className="rounded-xl border border-accent p-2 text-sm font-bold text-accent">{note}</p>}
 
+      {saving && <p className="text-sm text-muted">⏳ {t("Saving your replies…")}</p>}
+      {unsaved && <button className="btn grad" disabled={busy} onClick={() => liveDone(unsaved)}>{t("Try saving my replies again")}</button>}
+
       {tab === "practice" && cards === 0 && (
         <div className="card flex flex-col gap-3"><p>{t("Upload your Duo Cards export and every card becomes a real-life situation to answer.")}</p>{uploader}</div>
       )}
       {tab === "practice" && !!cards && !item && (
         <div className="card flex flex-col gap-3">
           <p className="text-muted">{t("Answer the way you would in real life. Stuck on a word? Write it in Arabic and keep going.")}</p>
-          <button className="btn grad" disabled={busy} onClick={next}>{busy ? t("Thinking…") : t("New situation")}</button>
+          <button className="btn grad" disabled={busy} onClick={goLive}>🎙 {t("Live conversation")}</button>
+          <button className="btn ghost" disabled={busy} onClick={next}>{busy ? t("Thinking…") : `⌨️ ${t("Type my replies")}`}</button>
           {uploader}
         </div>
       )}

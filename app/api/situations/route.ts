@@ -1,6 +1,8 @@
 import { api, Bad } from "@/lib/auth";
-import { all, get, run } from "@/lib/db";
+import { all, get, run, J } from "@/lib/db";
 import { json } from "@/lib/ai";
+import { today, transcript } from "@/lib/game";
+import type { Turn } from "@/lib/shared";
 
 /** CSV with quoted fields, "" escapes and newlines inside quotes (the Duo Cards export format). */
 function parseCsv(s: string) {
@@ -73,6 +75,53 @@ Return JSON {
       const fixed = clip(r.fixed, 600) || said, native = clip(r.native, 600) || card.front, tip = clip(r.tip, 400), ok = r.ok ? 1 : 0;
       const id = (await run("INSERT INTO replies (user_id, card_id, scene, line, said, fixed, native, tip, ok) VALUES (?,?,?,?,?,?,?,?,?)", u.id, card.id, scene, line, said, fixed, native, tip, ok)).lastInsertRowid;
       return { id, scene, line, said, fixed, native, tip, ok, front: card.front };
+    }
+
+    // Live voice drill: same engine as the daily session, with the cards as the script.
+    case "live": {
+      const cards = await all("SELECT id, front, back FROM cards c WHERE user_id=? ORDER BY (SELECT COUNT(*) FROM replies r WHERE r.card_id=c.id), RANDOM() LIMIT 12", u.id);
+      if (!cards.length) throw new Bad("Upload your cards first.");
+      const mins = 10, total = mins * 60_000;
+      const sessionId = (await run("INSERT INTO sessions (user_id, day, kind, minutes, theme) VALUES (?,?,'situations',?,?)", u.id, today(u.timezone), mins, JSON.stringify(cards))).lastInsertRowid;
+      return { sessionId, speechRate: (u.level ?? "B1").startsWith("A") ? 0.85 : 1, timeline: { warmupMs: 0, wrapAtMs: total - 25_000, hardStopMs: total + 15_000 } };
+    }
+    case "live-finish": {
+      const s = await get("SELECT * FROM sessions WHERE id=? AND user_id=? AND kind='situations' AND status='open'", Number(b.sessionId), u.id);
+      if (!s) throw new Bad("Session not found.");
+      const turns = (Array.isArray(b.turns) ? b.turns : []).slice(-400) as Turn[];
+      // The transcript is stored first and the session stays open until the replies are extracted, so a busy AI
+      // can be retried. 'closed', not 'done': a drill is not a graded daily session and must not count towards the week or streak.
+      const close = () => run("UPDATE sessions SET status='closed' WHERE id=?", s.id);
+      await run("UPDATE sessions SET turns=?, seconds=? WHERE id=?", JSON.stringify(turns), Number(b.seconds) || 0, s.id);
+      if (!turns.some((x) => x.role === "user")) { await close(); return { saved: [] }; }
+      const cards = J<{ id: number; front: string; back: string }[]>(s.theme, []);
+      const r = await json<{ items?: any[] }>(`Transcript of a spoken role-play drill (speech-to-text, so ignore spelling and punctuation). The coach set everyday situations so the learner would practise these phrases:
+${cards.map((c) => `${c.id}: "${c.front}" (Arabic: ${c.back})`).join("\n")}
+
+${transcript(turns).slice(0, 20000)}
+
+Return one item for each situation that appears in the transcript and that the learner answered, in order. Never invent a situation or a reply that is not in the transcript; if there are none, return {"items":[]}. JSON {"items":[{
+"id": phrase id from the list,
+"scene": "the situation in one sentence, in ${lang}",
+"line": "what the coach said in character",
+"said": "the learner's reply that came BEFORE the coach's 'You could say' correction, copied exactly as transcribed, Arabic words included. Never use the repetition they say after 'Your turn'.",
+"ok": true only if that reply was fully English, correct and natural,
+"fixed": "that reply in natural, correct English, each Arabic part replaced by what a native speaker would say there",
+"native": "what a native speaker would most naturally say, using the target phrase",
+"tip": "one short tip in ${lang} on the main difference"}]}`);
+      // Models sometimes invent replies: keep an item only if its "said" really occurs in the learner's speech.
+      const norm = (v: unknown) => String(v ?? "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+      const spoken = norm(turns.filter((x) => x.role === "user").map((x) => x.text).join(" "));
+      const saved = [];
+      for (const x of (r.items ?? []).slice(0, cards.length)) {
+        const card = cards.find((c) => c.id === Number(x?.id));
+        if (!card || !norm(x.said) || !spoken.includes(norm(x.said))) continue;
+        const row = { scene: clip(x.scene, 600), line: clip(x.line, 600), said: clip(x.said, 500), fixed: clip(x.fixed, 600) || clip(x.said, 500), native: clip(x.native, 600) || card.front, tip: clip(x.tip, 400), ok: x.ok ? 1 : 0 };
+        const id = (await run("INSERT INTO replies (user_id, card_id, scene, line, said, fixed, native, tip, ok) VALUES (?,?,?,?,?,?,?,?,?)", u.id, card.id, row.scene, row.line, row.said, row.fixed, row.native, row.tip, row.ok)).lastInsertRowid;
+        saved.push({ id, ...row, front: card.front });
+      }
+      await close();
+      return { saved };
     }
 
     case "delete": await run("DELETE FROM replies WHERE id=? AND user_id=?", Number(b.id), u.id); return { ok: true };

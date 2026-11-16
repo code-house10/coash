@@ -6,6 +6,8 @@ import { CUES, type Turn } from "@/lib/shared";
 
 export type CallStart = {
   sessionId: number; speechRate?: number; title: string; subtitle?: string;
+  /** Opening stage direction. When set, the call is a free-form drill: no warm-up/main/mistake-hunt phases. */
+  firstCue?: string;
   timeline: { warmupMs: number; mistakesAtMs?: number | null; wrapAtMs: number; hardStopMs: number };
 };
 export type CallResult = { sessionId: number; turns: Turn[]; actualSeconds: number; speakingSeconds: number; provider: string; failovers: number };
@@ -34,9 +36,9 @@ export function Call({ start, autosave, onDone, onError }: { start: CallStart; a
     s.speechRate = start.speechRate ?? 1;
     const timers: ReturnType<typeof setTimeout>[] = [];
     const at = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms));
-    s.start(start.sessionId, CUES.start).then(() => {
-      at(tl.warmupMs, () => s.cue(CUES.main));
-      if (tl.mistakesAtMs && tl.mistakesAtMs > tl.warmupMs + 20_000) at(tl.mistakesAtMs, () => s.cue(CUES.mistakes));
+    s.start(start.sessionId, start.firstCue ?? CUES.start).then(() => {
+      if (!start.firstCue) at(tl.warmupMs, () => s.cue(CUES.main));
+      if (!start.firstCue && tl.mistakesAtMs && tl.mistakesAtMs > tl.warmupMs + 20_000) at(tl.mistakesAtMs, () => s.cue(CUES.mistakes));
       at(tl.wrapAtMs, () => s.cue(CUES.wrap));
       at(tl.hardStopMs, finish);
     }).catch((e) => {
@@ -52,7 +54,8 @@ export function Call({ start, autosave, onDone, onError }: { start: CallStart; a
 
   const phase = ms < tl.warmupMs ? "Warm-up" : ms >= tl.wrapAtMs ? "Wrap-up" : tl.mistakesAtMs && ms >= tl.mistakesAtMs ? "Mistake hunt" : "Main activity";
   const left = Math.max(0, tl.wrapAtMs + 25_000 - ms);
-  const lastCoach = [...turns].reverse().find((x) => x.role === "model")?.text;
+  // Live captions: the last two turns, showing the newest words (the tail) as the transcript streams in.
+  const cc = turns.slice(-2).map((x) => ({ role: x.role, text: x.text.length > 170 ? `…${x.text.slice(-170)}` : x.text }));
   const label = { connecting: "Connecting…", listening: "Listening to you", speaking: "Coach is talking", thinking: "Thinking…" }[state[1]];
 
   return (
@@ -60,13 +63,17 @@ export function Call({ start, autosave, onDone, onError }: { start: CallStart; a
       <div>
         <p className="text-lg font-black">{start.title}</p>
         {start.subtitle && <p className="text-sm text-muted">{start.subtitle}</p>}
-        <p className="chip mt-2 inline-block">{t(phase)} · {Math.floor(left / 60000)}:{String(Math.floor(left / 1000) % 60).padStart(2, "0")}</p>
+        <p className="chip mt-2 inline-block">{start.firstCue ? "" : `${t(phase)} · `}{Math.floor(left / 60000)}:{String(Math.floor(left / 1000) % 60).padStart(2, "0")}</p>
       </div>
       <div className="flex flex-col items-center gap-4">
         <div className={`grad flex h-40 w-40 items-center justify-center rounded-full text-6xl ${state[1] === "speaking" ? "pulse" : ""}`}>{state[1] === "listening" ? "🎙" : state[1] === "speaking" ? "🗣" : "⏳"}</div>
         <p className="font-bold">{t(label)}</p>
         {state[0] === "backup" && <p className="text-xs text-muted">{t("The main voice service is busy, so the backup voice is in use.")}</p>}
-        <p dir="ltr" className="line-clamp-4 max-w-md text-sm text-muted">{lastCoach}</p>
+        <div aria-live="polite" className="flex min-h-24 w-full max-w-md flex-col justify-end gap-1 text-start text-sm">
+          {cc.map((x, i) => (
+            <p key={turns.length - cc.length + i} dir="auto" className={`max-w-[90%] rounded-2xl px-3 py-1.5 ${x.role === "user" ? "grad self-end" : "self-start border border-line bg-card"}`}>{x.text}</p>
+          ))}
+        </div>
       </div>
       <div className="flex w-full max-w-sm flex-col gap-2">
         {state[1] === "speaking" && <button className="btn ghost" onClick={() => vs.current?.interrupt()}>✋ {t("Let me speak")}</button>}
