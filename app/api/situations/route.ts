@@ -1,7 +1,7 @@
 import { api, Bad } from "@/lib/auth";
 import { all, get, run, J } from "@/lib/db";
 import { json } from "@/lib/ai";
-import { today, transcript } from "@/lib/game";
+import { CHUNK, today, transcript } from "@/lib/game";
 import type { Turn } from "@/lib/shared";
 
 /** CSV with quoted fields, "" escapes and newlines inside quotes (the Duo Cards export format). */
@@ -50,10 +50,11 @@ export const POST = api(async (u, req) => {
       const cards = await all<{ id: number; front: string; back: string; hint: string }>(
         "SELECT id, front, back, hint FROM cards c WHERE user_id=? ORDER BY (SELECT COUNT(*) FROM replies r WHERE r.card_id=c.id), RANDOM() LIMIT 5", u.id);
       if (!cards.length) throw new Bad("Upload your cards first.");
-      const r = await json<{ items?: { id: number; scene: string; line: string }[] }>(`An English learner (level ${u.level}) is memorising these phrases:
-${cards.map((c) => `${c.id}: "${c.front}" (Arabic: ${c.back}${c.hint ? `; example: ${c.hint}` : ""})`).join("\n")}
-For each phrase, invent one real everyday situation (home, work, friends, shops, travel, phone calls; vary them) in which the learner's most natural reply would use that phrase or pattern.
-Return JSON {"items":[{"id": phrase id, "scene": "one or two sentences in ${lang}: where the learner is, who is talking to them, and what the learner wants to get across. Never quote the English phrase.", "line": "what the other person says to the learner, in natural spoken English, one or two sentences"}]}`, undefined, 10_000);
+      const r = await json<{ items?: { id: number; scene: string; line: string }[] }>(`An English learner (level ${u.level}) is memorising these cards:
+${cards.map((c) => `${c.id}: ${c.front} (Arabic: ${c.back}${c.hint ? `; example: ${c.hint}` : ""})`).join("\n")}
+${CHUNK}
+For each card, invent one complete, real everyday situation (home, work, friends, shops, travel, phone calls; vary them) in which the learner's most natural reply needs the chunk. Use details that are DIFFERENT from the card's own example: other people, numbers, times, places.
+Return JSON {"items":[{"id": card id, "scene": "two or three sentences in ${lang}: where the learner is, who is talking to them, what has just happened, and the facts the learner needs for their answer (how long, who, what). Never quote the English chunk.", "line": "what the other person says to the learner, in natural spoken English, one or two sentences. It MUST end with a direct question or request to the learner whose natural answer needs the chunk; never a bare statement."}]}`, undefined, 10_000);
       const items = (r.items ?? []).filter((x) => x?.scene && x?.line && cards.some((c) => c.id === Number(x.id))).map((x) => ({ cardId: Number(x.id), scene: String(x.scene), line: String(x.line) }));
       if (!items.length) throw new Error("The AI service is busy right now. Please try again in a minute.");
       return { items };
@@ -65,12 +66,13 @@ Return JSON {"items":[{"id": phrase id, "scene": "one or two sentences in ${lang
       if (!card || !said) throw new Bad("Write your reply first.");
       const r = await json<{ ok?: boolean; fixed?: string; native?: string; tip?: string }>(`Situation: ${scene}
 The other person says: "${line}"
-Target phrase the learner is practising: "${card.front}" (Arabic: ${card.back})
+Card the learner is practising: ${card.front} (Arabic: ${card.back})
+${CHUNK}
 The learner (level ${u.level}) replied, possibly mixing Arabic words into the English: """${said}"""
 Return JSON {
-"ok": true only if the reply was fully English, correct, and natural in this situation (it does not have to use the target phrase),
-"fixed": "the learner's own reply in natural, correct English: every Arabic part replaced by what a native speaker would say at that point in this context, grammar fixed, their meaning and word choices kept wherever they already work",
-"native": "what a native speaker would most naturally say in this situation, using the target phrase",
+"ok": true if the reply was fully English, correct, and natural in this situation. Using the chunk with their own details (other numbers, times, people than the card's example) is correct,
+"fixed": "the learner's own reply in natural, correct English: every Arabic part replaced by what a native speaker would say at that point in this context, grammar fixed, their meaning, details and word choices kept wherever they already work",
+"native": "what a native speaker would most naturally answer in THIS situation: the chunk kept exactly, its slots filled with this situation's details (and the learner's own details when they fit). Never copy the card's example sentence. If the learner's reply already does this, repeat it",
 "tip": "one short tip in ${lang} on the main difference between the learner's reply and the native one"}`, undefined, 8_000);
       const fixed = clip(r.fixed, 600) || said, native = clip(r.native, 600) || card.front, tip = clip(r.tip, 400), ok = r.ok ? 1 : 0;
       const id = (await run("INSERT INTO replies (user_id, card_id, scene, line, said, fixed, native, tip, ok) VALUES (?,?,?,?,?,?,?,?,?)", u.id, card.id, scene, line, said, fixed, native, tip, ok)).lastInsertRowid;
@@ -95,19 +97,20 @@ Return JSON {
       await run("UPDATE sessions SET turns=?, seconds=? WHERE id=?", JSON.stringify(turns), Number(b.seconds) || 0, s.id);
       if (!turns.some((x) => x.role === "user")) { await close(); return { saved: [] }; }
       const cards = J<{ id: number; front: string; back: string }[]>(s.theme, []);
-      const r = await json<{ items?: any[] }>(`Transcript of a spoken role-play drill (speech-to-text, so ignore spelling and punctuation). The coach set everyday situations so the learner would practise these phrases:
-${cards.map((c) => `${c.id}: "${c.front}" (Arabic: ${c.back})`).join("\n")}
+      const r = await json<{ items?: any[] }>(`Transcript of a spoken role-play drill (speech-to-text, so ignore spelling and punctuation). The coach set everyday situations so the learner would practise these cards:
+${cards.map((c) => `${c.id}: ${c.front} (Arabic: ${c.back})`).join("\n")}
+${CHUNK}
 
 ${transcript(turns).slice(0, 20000)}
 
 Return one item for each situation that appears in the transcript and that the learner answered, in order. Never invent a situation or a reply that is not in the transcript; if there are none, return {"items":[]}. JSON {"items":[{
-"id": phrase id from the list,
-"scene": "the situation in one sentence, in ${lang}",
-"line": "what the coach said in character",
-"said": "the learner's reply that came BEFORE the coach's 'You could say' correction, copied exactly as transcribed, Arabic words included. Never use the repetition they say after 'Your turn'.",
-"ok": true only if that reply was fully English, correct and natural,
-"fixed": "that reply in natural, correct English, each Arabic part replaced by what a native speaker would say there",
-"native": "what a native speaker would most naturally say, using the target phrase",
+"id": card id from the list,
+"scene": "the situation in one or two sentences, in ${lang}",
+"line": "the question the coach asked in character",
+"said": "the learner's FIRST answer to that question, before the coach's 'Perfect' or 'You could say', copied exactly as transcribed, Arabic words included. Never use the repetition they say after 'Your turn'.",
+"ok": true if that reply was fully English, correct and natural. Using the chunk with their own details is correct,
+"fixed": "that reply in natural, correct English, each Arabic part replaced by what a native speaker would say there, their own details kept",
+"native": "the coach's own 'A native speaker would say' sentence if there is one; otherwise the chunk used with this situation's details. Never the card's example sentence",
 "tip": "one short tip in ${lang} on the main difference"}]}`);
       // Models sometimes invent replies: keep an item only if its "said" really occurs in the learner's speech.
       const norm = (v: unknown) => String(v ?? "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
