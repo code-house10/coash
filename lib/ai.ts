@@ -27,8 +27,20 @@ async function gen(req: Gen): Promise<string> {
   throw new Error("The AI service is busy right now. Please try again in a minute.", { cause: last });
 }
 
-/** Ask the text model for a JSON object. */
+/** Ask the text model for a JSON object. Groq first when configured (larger free quota, fast); Gemini on any Groq failure. */
 export async function json<T = any>(prompt: string, system?: string): Promise<T> {
+  if (process.env.GROQ_API_KEY) {
+    try {
+      const r = await groq("chat/completions", {
+        method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(25_000),
+        body: JSON.stringify({
+          model: process.env.GROQ_CHAT_MODEL || "llama-3.3-70b-versatile", temperature: 0.4, response_format: { type: "json_object" },
+          messages: [...(system ? [{ role: "system", content: system }] : []), { role: "user", content: prompt }],
+        }),
+      });
+      return JSON.parse(r.choices[0].message.content);
+    } catch (e) { console.warn("groq json failed, using gemini:", String((e as Error)?.message ?? e).slice(0, 160)); }
+  }
   const text = await gen({ contents: prompt, config: { systemInstruction: system, responseMimeType: "application/json", temperature: 0.4 } });
   return JSON.parse(text || "{}");
 }
@@ -66,6 +78,27 @@ export async function stt(file: File, mixed = false): Promise<string> {
   }
   const data = Buffer.from(await file.arrayBuffer()).toString("base64");
   return (await gen({ contents: [{ role: "user", parts: [{ inlineData: { mimeType: file.type || "audio/wav", data } }, { text: `Transcribe this speech exactly as spoken, mistakes included.${mixed ? " The speaker mixes English and Arabic: write English words in Latin letters and Arabic words in Arabic script, and do not translate." : ""} Output only the transcript.` }] }] })).trim();
+}
+
+const TTS_MODELS = [process.env.GEMINI_TTS_MODEL || "gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts"];
+/** Read text aloud in a Gemini voice. Returns a WAV file (Gemini sends raw 16-bit mono PCM, 24 kHz). */
+export async function tts(text: string, voice: string): Promise<Buffer> {
+  let last: unknown;
+  for (const model of TTS_MODELS) {
+    try {
+      const r = await ai().models.generateContent({
+        model, contents: text, // the text alone: any instruction prefix gets read aloud too
+        config: { responseModalities: [Modality.AUDIO], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } },
+      });
+      const a = r.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data)?.inlineData;
+      if (!a?.data) throw new Error("no audio in the answer");
+      const pcm = Buffer.from(a.data, "base64"), rate = Number(/rate=(\d+)/.exec(a.mimeType ?? "")?.[1]) || 24000, h = Buffer.alloc(44);
+      h.write("RIFF", 0); h.writeUInt32LE(36 + pcm.length, 4); h.write("WAVEfmt ", 8); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22);
+      h.writeUInt32LE(rate, 24); h.writeUInt32LE(rate * 2, 28); h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34); h.write("data", 36); h.writeUInt32LE(pcm.length, 40);
+      return Buffer.concat([h, pcm]);
+    } catch (e) { last = e; console.warn(`gemini ${model} failed:`, String((e as Error)?.message ?? e).slice(0, 160)); }
+  }
+  throw new Error("The AI service is busy right now. Please try again in a minute.", { cause: last });
 }
 
 /** Mint a single-use token the browser uses to open the live voice socket. The API key never leaves the server. */

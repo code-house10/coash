@@ -6,8 +6,27 @@ import { openMic, wav } from "@/lib/voice";
 type Item = { cardId: number; scene: string; line: string };
 type Saved = { id: number; scene: string; line: string; said: string; fixed: string; native: string; tip: string; ok: number; front: string | null };
 
-const say = (text: string) => { const u = new SpeechSynthesisUtterance(text); u.lang = "en-US"; speechSynthesis.cancel(); speechSynthesis.speak(u); };
-const Speak = ({ text }: { text: string }) => <button className="ms-1" aria-label="Listen" onClick={() => say(text)}>🔊</button>;
+// Read-aloud in the coach's Gemini voice. Clips are kept for the page's lifetime so a replay is instant;
+// if Gemini is busy the browser's own voice is used instead.
+const clips = new Map<string, string>();
+let playing: HTMLAudioElement | undefined;
+async function say(text: string) {
+  playing?.pause(); speechSynthesis.cancel();
+  try {
+    let url = clips.get(text);
+    if (!url) {
+      const r = await fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+      if (!r.ok) throw new Error(`tts ${r.status}`);
+      clips.set(text, (url = URL.createObjectURL(await r.blob())));
+    }
+    playing = new Audio(url);
+    await playing.play();
+  } catch { const u = new SpeechSynthesisUtterance(text); u.lang = "en-US"; speechSynthesis.speak(u); }
+}
+function Speak({ text }: { text: string }) {
+  const [busy, setBusy] = useState(false);
+  return <button className="ms-1" aria-label="Listen" disabled={busy} onClick={async () => { setBusy(true); await say(text); setBusy(false); }}>{busy ? "⏳" : "🔊"}</button>;
+}
 
 /** The two corrected versions of a reply: the learner's own words fixed, and the native wording. */
 function Answer({ r, t }: { r: Saved; t: ReturnType<typeof useT> }) {
