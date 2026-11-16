@@ -79,5 +79,13 @@ export const AR: Record<string, string> = {
   // community
   "community": "مجتمع", "Before you join": "قبل أن تنضم", "English only. Mistakes are welcome.": "بالإنجليزية فقط. الأخطاء مرحّب بها.", "Be kind. Help, do not mock.": "كن لطيفاً. ساعد ولا تسخر.",
   "No private details, links or selling.": "لا بيانات خاصة ولا روابط ولا بيع.", "I agree": "أوافق", "Nobody has written yet. Say hello!": "لم يكتب أحد بعد. قل مرحباً!",
+  // situations
+  "Situations": "مواقف", "Practice": "تدريب", "My saved replies": "ردودي المحفوظة", "Upload cards (CSV)": "ارفع الكروت (CSV)", "{n} new cards added.": "أُضيف {n} كارت جديد.",
+  "Upload your Duo Cards export and every card becomes a real-life situation to answer.": "ارفع ملف Duo Cards وكل كارت يتحول إلى موقف حقيقي ترد عليه.",
+  "Answer the way you would in real life. Stuck on a word? Write it in Arabic and keep going.": "رد كما تفعل في الواقع. لا تعرف كلمة؟ اكتبها بالعربي وأكمل.",
+  "New situation": "موقف جديد", "Next situation": "الموقف التالي", "Skip": "تخطَّ", "Check my reply": "راجع ردي", "Your reply: English, or mix in Arabic": "ردك: بالإنجليزية، أو اخلط معها عربي",
+  "Reply by voice": "رد بالصوت", "You said": "قلت", "Your reply, fixed": "ردك بعد التصحيح", "A native speaker would say": "المتحدث الأصلي يقول",
+  "Nothing saved yet. Every reply you check is kept here.": "لا شيء محفوظ بعد. كل رد تراجعه يُحفظ هنا.", "Say your answer, then tap to check.": "قل إجابتك ثم اضغط للتحقق.",
+  "Upload your cards first.": "ارفع كروتك أولاً.", "Write your reply first.": "اكتب ردك أولاً.", "No cards found in this file.": "لا توجد كروت في هذا الملف.",
   "Delete": "حذف", "Send this version": "أرسل هذه النسخة", "Polish my English": "حسّن إنجليزيتي", "Voice note": "رسالة صوتية", "+{n} XP for showing up today": "+{n} نقطة لحضورك اليوم",
 };

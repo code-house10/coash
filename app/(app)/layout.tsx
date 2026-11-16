@@ -2,7 +2,7 @@ import Link from "next/link";
 import { pageUser } from "@/lib/auth";
 import { makeT } from "@/lib/t";
 
-const NAV = [["/", "🏠", "Home"], ["/community", "💬", "Community"], ["/reports", "📄", "Reports"], ["/plan", "🧭", "Plan"], ["/settings", "⚙️", "Settings"]];
+const NAV = [["/", "🏠", "Home"], ["/situations", "🎭", "Situations"], ["/community", "💬", "Community"], ["/reports", "📄", "Reports"], ["/plan", "🧭", "Plan"], ["/settings", "⚙️", "Settings"]];
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const u = await pageUser(false);

@@ -54,16 +54,18 @@ export async function chat(system: string, turns: Turn[]): Promise<string> {
 }
 
 /** Speech to text. Groq Whisper if configured, else Gemini audio understanding. */
-export async function stt(file: File): Promise<string> {
+export async function stt(file: File, mixed = false): Promise<string> {
   if (process.env.GROQ_API_KEY) {
     const f = new FormData();
     f.append("file", file, file.name || "audio.wav");
     f.append("model", process.env.GROQ_STT_MODEL || "whisper-large-v3-turbo");
-    f.append("language", "en");
+    // mixed: the speaker switches between English and Arabic, so let Whisper detect instead of forcing English.
+    if (mixed) f.append("prompt", "English mixed with Arabic. يعني I mean, مش عارف how to say it.");
+    else f.append("language", "en");
     return (await groq("audio/transcriptions", { method: "POST", body: f })).text ?? "";
   }
   const data = Buffer.from(await file.arrayBuffer()).toString("base64");
-  return (await gen({ contents: [{ role: "user", parts: [{ inlineData: { mimeType: file.type || "audio/wav", data } }, { text: "Transcribe this speech exactly as spoken, mistakes included. Output only the transcript." }] }] })).trim();
+  return (await gen({ contents: [{ role: "user", parts: [{ inlineData: { mimeType: file.type || "audio/wav", data } }, { text: `Transcribe this speech exactly as spoken, mistakes included.${mixed ? " The speaker mixes English and Arabic: write English words in Latin letters and Arabic words in Arabic script, and do not translate." : ""} Output only the transcript.` }] }] })).trim();
 }
 
 /** Mint a single-use token the browser uses to open the live voice socket. The API key never leaves the server. */
